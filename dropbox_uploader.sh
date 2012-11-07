@@ -54,6 +54,7 @@ API_METADATA_URL="https://api.dropbox.com/1/metadata"
 API_INFO_URL="https://api.dropbox.com/1/account/info"
 APP_CREATE_URL="https://www2.dropbox.com/developers/apps"
 RESPONSE_FILE="$TMP_DIR/du_resp_$RANDOM"
+RESPONSE_FILE_1="$TMP_DIR/du_resp_$RANDOM"
 CHUNK_FILE="$TMP_DIR/du_chunk_$RANDOM"
 BIN_DEPS="curl sed basename date grep cut stat dd"
 VERSION="0.10"
@@ -380,13 +381,13 @@ function db_list
         
     print " > Listing \"$1\"... "  
     time=$(utime)
-    curl $CURL_ACCEPT_CERTIFICATES -s --show-error --globoff -i -o "$RESPONSE_FILE" "$API_METADATA_URL/$ACCESS_LEVEL/$DIR_DST?oauth_consumer_key=$APPKEY&oauth_token=$OAUTH_ACCESS_TOKEN&oauth_signature_method=PLAINTEXT&oauth_signature=$APPSECRET%26$OAUTH_ACCESS_TOKEN_SECRET&oauth_timestamp=$time&oauth_nonce=$RANDOM"
+    curl $CURL_ACCEPT_CERTIFICATES -s --show-error --globoff -i -o "$RESPONSE_FILE_1" "$API_METADATA_URL/$ACCESS_LEVEL/$DIR_DST?oauth_consumer_key=$APPKEY&oauth_token=$OAUTH_ACCESS_TOKEN&oauth_signature_method=PLAINTEXT&oauth_signature=$APPSECRET%26$OAUTH_ACCESS_TOKEN_SECRET&oauth_timestamp=$time&oauth_nonce=$RANDOM"
    
     #Check
-    grep "HTTP/1.1 200 OK" "$RESPONSE_FILE" > /dev/null
+    grep "HTTP/1.1 200 OK" "$RESPONSE_FILE_1" > /dev/null
     if [ $? -eq 0 ]; then
         
-        local IS_DIR=$(sed -n 's/^\(.*\)\"contents":.\[.*/\1/p' "$RESPONSE_FILE")
+        local IS_DIR=$(sed -n 's/^\(.*\)\"contents":.\[.*/\1/p' "$RESPONSE_FILE_1")
                    
         #It's a directory
         if [ ! -z "$IS_DIR" ]; then
@@ -396,11 +397,18 @@ function db_list
             #Extracting directory content [...]
             #and replacing "}, {" with "}\n{"
             #I don't like this piece of code... but seems to be the only way to do this with SED, writing a portable code...
-            local DIR_CONTENT=$(sed -n 's/.*: \[{\(.*\)/\1/p' "$RESPONSE_FILE" | sed 's/}, *{/}\
+            local DIR_CONTENT=$(sed -n 's/.*: \[{\(.*\)/\1/p' "$RESPONSE_FILE_1" | sed 's/}, *{/}\
 {/g')
             
             #Extracing files and subfolders
-            echo "$DIR_CONTENT" | sed -n 's/.*"path": *"\([^"]*\)",.*"is_dir": *\([^"]*\),.*/\1:\2/p' > $RESPONSE_FILE
+            echo "$DIR_CONTENT" | sed -n 's/.*"path": *"\([^"]*\)",.*"is_dir": *\([^"]*\),.*/\1:\2/p' > $RESPONSE_FILE_1
+
+        	#Check destination directory existance
+        	if [[ ! -e $DIR_DST ]]; then
+    			mkdir $DIR_DST
+			elif [[ ! -d $DIR_DST ]]; then
+    			echo "$DIR_DST already exists but is not a directory" 1>&2
+			fi                                        
             
             #For each line...
             while read line; do
@@ -411,10 +419,13 @@ function db_list
                 
                 if [ "$TYPE" == "false" ]; then
                     echo " [F] $FILE"
-                else
+        
+
+               		db_download "$DIR_DST/$FILE" "$DIR_DST/$FILE"
+               else
                     echo " [D] $FILE"
                 fi
-            done < $RESPONSE_FILE
+            done < $RESPONSE_FILE_1
         
         #It's a file
         else
